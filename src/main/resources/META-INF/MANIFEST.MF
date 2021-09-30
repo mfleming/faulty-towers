@@ -1,0 +1,3 @@
+Manifest-Version: 1.0 
+Premain-Class: com.datastax.faultytowers.Agent
+Agent-Class: com.datastax.faultytowers.Agent
