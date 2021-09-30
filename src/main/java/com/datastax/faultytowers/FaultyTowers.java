@@ -133,7 +133,6 @@ public class FaultyTowers
                     Expression expr = stmt.getExpression();
                     if (expr.isObjectCreationExpr()) {
                         String exceptionName = expr.asObjectCreationExpr().getType().toString();
-                        System.out.println(exceptionName);
                         if (!exceptionsThrown.contains(exceptionName))
                             exceptionsThrown.add(exceptionName);
                     }
