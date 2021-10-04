@@ -5,9 +5,22 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.body.*;
+import com.sun.tools.attach.AgentInitializationException;
+import com.sun.tools.attach.AgentLoadException;
+import com.sun.tools.attach.AttachNotSupportedException;
+import com.sun.tools.attach.VirtualMachine;
+import org.jacoco.core.analysis.Analyzer;
+import org.jacoco.core.analysis.CoverageBuilder;
+import org.jacoco.core.analysis.IClassCoverage;
+import org.jacoco.core.analysis.IMethodCoverage;
+import org.jacoco.core.data.ExecutionDataStore;
+import org.jacoco.core.data.SessionInfoStore;
+import org.jacoco.core.runtime.RuntimeData;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.management.ManagementFactory;
+import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
@@ -89,6 +102,95 @@ public class FaultyTowers
         parseCompilationUit(compilationUnit);
     }
 
+    /**
+     * Install the Java Agent into the currently running JVM.
+     */
+    public void installAgent() {
+        String pid;
+        String runtimeName = ManagementFactory.getRuntimeMXBean().getName();
+        int processIdIndex = runtimeName.indexOf('@');
+        if (processIdIndex == -1) {
+            throw new IllegalStateException("Cannot extract process id from runtime management bean");
+        } else {
+            pid = runtimeName.substring(0, processIdIndex);
+        }
+
+        try {
+            VirtualMachine vm = VirtualMachine.attach(pid);
+            // TODO this is hardcoded. Need to fix.
+            vm.loadAgent("target/faulty-towers-1.0-SNAPSHOT.jar");
+        }
+        catch (AttachNotSupportedException e) {
+            System.out.println("Attach not supported");
+            e.printStackTrace();
+        }
+        catch (IOException e) {
+            System.out.println("IOException e");
+            e.printStackTrace();
+        }
+        catch (AgentLoadException e) {
+            e.printStackTrace();
+        }
+        catch (AgentInitializationException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Remove the Java Agent from the target VM.
+     */
+    public void removeAgent() {
+        // TODO
+    }
+
+    /**
+     * Return the code coverage statistic for the specified method.
+     *
+     * @param className the name of the class containing {@code methodName}.
+     * @param methodName the name of the method.
+     * @return the percentage of time spent in the specified method.
+     */
+    public double getCoverage(String className, String methodName) {
+        try {
+            RuntimeData data = (RuntimeData)Class.forName(Agent.class.getName(), true, ClassLoader.getSystemClassLoader())
+                    .getMethod("getData")
+                    .invoke(null);
+
+            final ExecutionDataStore executionDataStore = new ExecutionDataStore();
+            final SessionInfoStore sessionInfoStore = new SessionInfoStore();
+            data.collect(executionDataStore, sessionInfoStore, false);
+            final CoverageBuilder coverageBuilder = new CoverageBuilder();
+            final Analyzer analyzer = new Analyzer(executionDataStore, coverageBuilder);
+
+            String absClassName = "/" + className.replace(".", "/") + ".class";
+            analyzer.analyzeClass(getClass().getResourceAsStream(absClassName), absClassName);
+            final IClassCoverage cc = coverageBuilder.getClasses().stream().findFirst().orElse(null);
+            if (cc == null)
+                return 0.0;
+
+            cc.getMethodCounter().getCoveredCount();
+            for (final IMethodCoverage mc : cc.getMethods()) {
+                if (mc.getName().equals(methodName))
+                    return mc.getMethodCounter().getCoveredRatio();
+            }
+
+            return 0.0;
+        }
+        catch (ClassNotFoundException | NoSuchMethodException e) {
+            e.printStackTrace();
+        }
+        catch (InvocationTargetException e) {
+            e.printStackTrace();
+        }
+        catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+        catch (IOException e) {
+            e.printStackTrace();
+        }
+        return 0;
+    }
+
     private static class FaultLocation {
         String method;
         List<String> exceptions;
@@ -159,8 +261,7 @@ public class FaultyTowers
         ft.parseDirectory(directory);
     }
 
-    public int numFaults()
-    {
+    public int numFaults() {
         return faults.stream()
                 .map(f -> f.exceptions.size())
                 .reduce(0, Integer::sum);
