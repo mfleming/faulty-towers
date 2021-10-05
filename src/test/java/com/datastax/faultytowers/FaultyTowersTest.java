@@ -9,8 +9,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.*;
 
-public class FaultyTowersTest
-{
+public class FaultyTowersTest {
     private static FaultyTowers ft;
 
     @BeforeClass

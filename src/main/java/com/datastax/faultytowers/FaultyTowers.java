@@ -29,14 +29,22 @@ import java.util.stream.Collectors;
 import com.google.common.annotations.VisibleForTesting;
 
 /**
- * FaultyTowers is the main entry point to the application.
+ * <p>FaultyTowers is the main entry point to the application.</p>
  *
- * Depending on which mode we're executing in, we're either collecting code coverage data for a subsequent run
- * or profiling a workload until we have enough samples that we can inject faults without needing to restart the
- * workload.
+ * <p>Depending on which mode we're executing in, we're either collecting code coverage data for a
+ * subsequent run or profiling a workload until we have enough samples that we can inject faults
+ * without needing to restart the workload.</p>
+ *
+ * <p><b>offline-mode:</b> This is used when injecting faults into short-running tests, e.g. JUnit tests.
+ * This mode uses 2 phases. First, we collect coverage data for the JUnit test which we write to
+ * a file once the JUnit tests have finished. In the second step, the file is read, the JUnit tests
+ * are executed again, and faults are injected.</p>
+ *
+ * <p><b>online-mode:</b> This mode is used when injecting faults into long-running tests, e.g. performance
+ * workloads. Here we don't write out intermediate coverage data to a file. Instead, we profile
+ * the workload at runtime and then inject faults.</p>
  */
-public class FaultyTowers
-{
+public class FaultyTowers {
     private final PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:**.java");
     private final JavaParser jvParser;
 
@@ -65,9 +73,11 @@ public class FaultyTowers
     }
 
     /**
-     * Parse a file.
+     * Parse a file and record all fault locations.
      *
-     * @param path the path of the file to parse.
+     * <p>Currently "faults" are limited to throw statements only.</p>
+     *
+     * @param path The path of the file to parse.
      * @throws IOException
      */
     public void parse(Path path) throws IOException {
@@ -146,9 +156,12 @@ public class FaultyTowers
     /**
      * Return the code coverage statistic for the specified method.
      *
-     * @param className the name of the class containing {@code methodName}.
-     * @param methodName the name of the method.
-     * @return the percentage of time spent in the specified method.
+     * <p>Return the percentage of time that {@code methodName} in class {@code className}
+     * was executed between the last call to {@link #installAgent()} and now.</p>
+     *
+     * @param className  The name of the class containing {@code methodName}.
+     * @param methodName The name of the method.
+     * @return The percentage of time spent in the specified method.
      */
     public double getCoverage(String className, String methodName) {
         try {
@@ -204,9 +217,9 @@ public class FaultyTowers
     private List<FaultLocation> faults = new ArrayList<>();
 
     /**
-     * Parse a compilation unit and collect all throw statements.
+     * Parse a compilation unit and record all throw statements.
      *
-     * @param compilationUnit the compilation unit to parse.
+     * @param compilationUnit The compilation unit to parse.
      */
     private void parseCompilationUit(CompilationUnit compilationUnit) {
         List<ClassOrInterfaceDeclaration> classes = compilationUnit.findAll(ClassOrInterfaceDeclaration.class).stream()
@@ -261,6 +274,11 @@ public class FaultyTowers
         ft.parseDirectory(directory);
     }
 
+    /**
+     * Returns the number of faults we've discovered so far from all {@link #parse(Path)} calls.
+     *
+     * @return The total number of faults identified so far.
+     */
     public int numFaults() {
         return faults.stream()
                 .map(f -> f.exceptions.size())
