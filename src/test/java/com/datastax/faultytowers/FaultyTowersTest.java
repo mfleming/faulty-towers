@@ -28,15 +28,15 @@ public class FaultyTowersTest {
     @Test
     public void codeWithThrowsHasNonZeroFaults() {
         String code = """
-            class Foobar {
-                void bar() {
-                    if (something)
-                        throw new RuntimeException();
-                    if (somethingElse)
-                        throw new Exception();
-                }
-            }
-        """;
+                    class Foobar {
+                        void bar() {
+                            if (something)
+                                throw new RuntimeException();
+                            if (somethingElse)
+                                throw new Exception();
+                        }
+                    }
+                """;
         InputStream is = new ByteArrayInputStream(code.getBytes(StandardCharsets.UTF_8));
         ft.parse(is);
         assertEquals(2, ft.numFaults());

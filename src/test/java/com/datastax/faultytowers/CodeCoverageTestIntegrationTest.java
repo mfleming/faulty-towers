@@ -16,6 +16,4 @@ public class CodeCoverageTestIntegrationTest {
         assertEquals(1.0, coverage, 0);
         ft.removeAgent();
     }
-
-
 }

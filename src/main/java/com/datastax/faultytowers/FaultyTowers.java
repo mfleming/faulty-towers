@@ -60,16 +60,16 @@ public class FaultyTowers {
     }
 
     // Recursively walk the directory hierarchy and parse all .java files.
-    private void parseDirectory(String directory) throws  IOException {
+    private void parseDirectory(String directory) throws IOException {
         List<Path> paths = Files.walk(Paths.get(directory))
                 .filter(Files::isRegularFile)
                 .filter(matcher::matches)
                 .collect(Collectors.toList());
 
-       for (Path path : paths)  {
-           //System.out.println(path.toAbsolutePath());
-           parse(path);
-       }
+        for (Path path : paths) {
+            //System.out.println(path.toAbsolutePath());
+            parse(path);
+        }
     }
 
     /**
@@ -129,19 +129,15 @@ public class FaultyTowers {
             VirtualMachine vm = VirtualMachine.attach(pid);
             // TODO this is hardcoded. Need to fix.
             vm.loadAgent("target/faulty-towers-1.0-SNAPSHOT.jar");
-        }
-        catch (AttachNotSupportedException e) {
+        } catch (AttachNotSupportedException e) {
             System.out.println("Attach not supported");
             e.printStackTrace();
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             System.out.println("IOException e");
             e.printStackTrace();
-        }
-        catch (AgentLoadException e) {
+        } catch (AgentLoadException e) {
             e.printStackTrace();
-        }
-        catch (AgentInitializationException e) {
+        } catch (AgentInitializationException e) {
             e.printStackTrace();
         }
     }
@@ -165,7 +161,7 @@ public class FaultyTowers {
      */
     public double getCoverage(String className, String methodName) {
         try {
-            RuntimeData data = (RuntimeData)Class.forName(Agent.class.getName(), true, ClassLoader.getSystemClassLoader())
+            RuntimeData data = (RuntimeData) Class.forName(Agent.class.getName(), true, ClassLoader.getSystemClassLoader())
                     .getMethod("getData")
                     .invoke(null);
 
@@ -188,17 +184,13 @@ public class FaultyTowers {
             }
 
             return 0.0;
-        }
-        catch (ClassNotFoundException | NoSuchMethodException e) {
+        } catch (ClassNotFoundException | NoSuchMethodException e) {
             e.printStackTrace();
-        }
-        catch (InvocationTargetException e) {
+        } catch (InvocationTargetException e) {
             e.printStackTrace();
-        }
-        catch (IllegalAccessException e) {
+        } catch (IllegalAccessException e) {
             e.printStackTrace();
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             e.printStackTrace();
         }
         return 0;
@@ -229,7 +221,7 @@ public class FaultyTowers {
         for (ClassOrInterfaceDeclaration c : classes) {
             List<MethodDeclaration> methods = c.getMethods();
             for (MethodDeclaration method : methods) {
-                Optional <BlockStmt> body = method.getBody();
+                Optional<BlockStmt> body = method.getBody();
 
                 // Empty body
                 if (!body.isPresent())
@@ -268,7 +260,7 @@ public class FaultyTowers {
         }
     }
 
-   public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException {
         String directory = args[0];
         FaultyTowers ft = new FaultyTowers();
         ft.parseDirectory(directory);

@@ -27,9 +27,9 @@ public class CodeCoverage implements ClassFileTransformer {
     }
 
     public byte[] transform(final ClassLoader loader, final String classname,
-            final Class<?> classBeingRedefined,
-            final ProtectionDomain protectionDomain,
-            final byte[] classfileBuffer) throws IllegalClassFormatException {
+                            final Class<?> classBeingRedefined,
+                            final ProtectionDomain protectionDomain,
+                            final byte[] classfileBuffer) throws IllegalClassFormatException {
 
         // We do not support class retransformation:
         if (classBeingRedefined != null) {
