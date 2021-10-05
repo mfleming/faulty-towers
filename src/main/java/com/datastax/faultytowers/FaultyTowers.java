@@ -17,6 +17,7 @@ import org.jacoco.core.data.ExecutionDataStore;
 import org.jacoco.core.data.SessionInfoStore;
 import org.jacoco.core.runtime.RuntimeData;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.management.ManagementFactory;
@@ -194,6 +195,18 @@ public class FaultyTowers {
             e.printStackTrace();
         }
         return 0;
+    }
+
+    /**
+     * Write the recorded coverage data to {@code outputFile}.
+     *
+     * @param outputFile The name of the file to write to.
+     * @throws IOException
+     */
+    public void writeCoverage(String outputFile) throws IOException {
+        byte[] data = {};
+        Path file = Paths.get(outputFile);
+        Files.write(file, data);
     }
 
     private static class FaultLocation {
