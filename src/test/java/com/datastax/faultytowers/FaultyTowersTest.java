@@ -14,7 +14,7 @@ public class FaultyTowersTest {
 
     @BeforeClass
     public static void setUp() {
-        ft = new FaultyTowers();
+        ft = new FaultyTowers(null);
     }
 
     @Test

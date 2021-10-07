@@ -11,7 +11,7 @@ import java.io.IOException;
 import static junit.framework.TestCase.*;
 import static org.junit.Assert.assertNotEquals;
 
-public class CodeCoverageTest {
+public class CoverageAnalyzerTest {
 
     private static final String OUTPUTFILE = "writeOutputFile.txt";
 
@@ -27,9 +27,16 @@ public class CodeCoverageTest {
         f.delete();
     }
 
+    private static class MockCoverageAnalyzer implements CoverageAnalyzer {
+        @Override
+        public Double getCoverage(String className, String methodName) {
+            return null;
+        }
+    }
+
     @Test
     public void noCoverageWritesEmptyFile() throws IOException {
-        FaultyTowers ft = new FaultyTowers();
+        FaultyTowers ft = new FaultyTowers(new MockCoverageAnalyzer());
         ft.writeCoverage(OUTPUTFILE);
         assertOutputFileExists();
     }
@@ -41,7 +48,7 @@ public class CodeCoverageTest {
 
     @Test
     public void coverageDataWritesNonEmptyFile() throws IOException {
-        FaultyTowers ft = new FaultyTowers();
+        FaultyTowers ft = new FaultyTowers(new MockCoverageAnalyzer());
         ft.writeCoverage(OUTPUTFILE);
         assertOutputFileExists();
         assertNotEquals(0, new File(OUTPUTFILE).length());

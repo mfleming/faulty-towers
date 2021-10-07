@@ -9,15 +9,7 @@ import com.sun.tools.attach.AgentInitializationException;
 import com.sun.tools.attach.AgentLoadException;
 import com.sun.tools.attach.AttachNotSupportedException;
 import com.sun.tools.attach.VirtualMachine;
-import org.jacoco.core.analysis.Analyzer;
-import org.jacoco.core.analysis.CoverageBuilder;
-import org.jacoco.core.analysis.IClassCoverage;
-import org.jacoco.core.analysis.IMethodCoverage;
-import org.jacoco.core.data.ExecutionDataStore;
-import org.jacoco.core.data.SessionInfoStore;
-import org.jacoco.core.runtime.RuntimeData;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.management.ManagementFactory;
@@ -49,7 +41,10 @@ public class FaultyTowers {
     private final PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:**.java");
     private final JavaParser jvParser;
 
-    public FaultyTowers() {
+    private final CoverageAnalyzer coverageAnalyzer;
+
+    public FaultyTowers(CoverageAnalyzer coverageAnalyzer) {
+        this.coverageAnalyzer = coverageAnalyzer;
         // Set configuration
         ParserConfiguration parseConfig = new ParserConfiguration();
         parseConfig.setCharacterEncoding(StandardCharsets.UTF_8);
@@ -114,9 +109,11 @@ public class FaultyTowers {
     }
 
     /**
-     * Install the Java Agent into the currently running JVM.
+     * Install the Java Agent into the currently running JVM and return the FaultyTowers object.
+     *
+     * @return The FaultyTowers object installed by the agent or {@code null} on failure.
      */
-    public void installAgent() {
+    public static FaultyTowers installAgent() {
         String pid;
         String runtimeName = ManagementFactory.getRuntimeMXBean().getName();
         int processIdIndex = runtimeName.indexOf('@');
@@ -130,6 +127,11 @@ public class FaultyTowers {
             VirtualMachine vm = VirtualMachine.attach(pid);
             // TODO this is hardcoded. Need to fix.
             vm.loadAgent("target/faulty-towers-1.0-SNAPSHOT.jar");
+            FaultyTowers ft = (FaultyTowers) Class.forName(Agent.class.getName(), true, ClassLoader.getSystemClassLoader())
+                    .getMethod("getFaultyTowers")
+                    .invoke(null);
+            return ft;
+
         } catch (AttachNotSupportedException e) {
             System.out.println("Attach not supported");
             e.printStackTrace();
@@ -140,13 +142,22 @@ public class FaultyTowers {
             e.printStackTrace();
         } catch (AgentInitializationException e) {
             e.printStackTrace();
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+        } catch (InvocationTargetException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        } catch (NoSuchMethodException e) {
+            e.printStackTrace();
         }
+        return null;
     }
 
     /**
      * Remove the Java Agent from the target VM.
      */
-    public void removeAgent() {
+    public static void removeAgent() {
         // TODO
     }
 
@@ -161,40 +172,7 @@ public class FaultyTowers {
      * @return The percentage of time spent in the specified method.
      */
     public double getCoverage(String className, String methodName) {
-        try {
-            RuntimeData data = (RuntimeData) Class.forName(Agent.class.getName(), true, ClassLoader.getSystemClassLoader())
-                    .getMethod("getData")
-                    .invoke(null);
-
-            final ExecutionDataStore executionDataStore = new ExecutionDataStore();
-            final SessionInfoStore sessionInfoStore = new SessionInfoStore();
-            data.collect(executionDataStore, sessionInfoStore, false);
-            final CoverageBuilder coverageBuilder = new CoverageBuilder();
-            final Analyzer analyzer = new Analyzer(executionDataStore, coverageBuilder);
-
-            String absClassName = "/" + className.replace(".", "/") + ".class";
-            analyzer.analyzeClass(getClass().getResourceAsStream(absClassName), absClassName);
-            final IClassCoverage cc = coverageBuilder.getClasses().stream().findFirst().orElse(null);
-            if (cc == null)
-                return 0.0;
-
-            cc.getMethodCounter().getCoveredCount();
-            for (final IMethodCoverage mc : cc.getMethods()) {
-                if (mc.getName().equals(methodName))
-                    return mc.getMethodCounter().getCoveredRatio();
-            }
-
-            return 0.0;
-        } catch (ClassNotFoundException | NoSuchMethodException e) {
-            e.printStackTrace();
-        } catch (InvocationTargetException e) {
-            e.printStackTrace();
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return 0;
+        return coverageAnalyzer.getCoverage(className, methodName);
     }
 
     /**
@@ -273,9 +251,10 @@ public class FaultyTowers {
         }
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws Exception {
         String directory = args[0];
-        FaultyTowers ft = new FaultyTowers();
+        // Parse a diretory only.
+        FaultyTowers ft = new FaultyTowers(null);
         ft.parseDirectory(directory);
     }
 

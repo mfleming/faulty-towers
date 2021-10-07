@@ -8,24 +8,26 @@ import org.jacoco.core.runtime.ModifiedSystemClassRuntime;
 import org.jacoco.core.runtime.RuntimeData;
 
 public class Agent {
-    private static IRuntime RUNTIME;
-    private static volatile RuntimeData DATA;
+    private static IRuntime runtime;
+    private static volatile RuntimeData runtimeData;
+    private static FaultyTowers faultyTowers;
 
     public static void premain(String agentArgs, Instrumentation inst) {
     }
 
-    public static RuntimeData getData() {
-        return DATA;
+    public static FaultyTowers getFaultyTowers() {
+        return faultyTowers;
     }
 
     public static void agentmain(String agentArgs, Instrumentation inst) {
         try {
-            RUNTIME = ModifiedSystemClassRuntime.createFor(inst,
+            runtime = ModifiedSystemClassRuntime.createFor(inst,
                     "java/lang/UnknownError");
             // Needed?
             //runtime.startup(agent.getData());
-            DATA = new RuntimeData();
-            inst.addTransformer(new CodeCoverage(RUNTIME, DATA));
+            JaCoCoCoverageAnalyzer codeCoverage = new JaCoCoCoverageAnalyzer(runtime);
+            faultyTowers = new FaultyTowers(codeCoverage);
+            inst.addTransformer(codeCoverage);
         } catch (IOException | ClassNotFoundException e) {
             e.printStackTrace();
         } catch (Exception e) {

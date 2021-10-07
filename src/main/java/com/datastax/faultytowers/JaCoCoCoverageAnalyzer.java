@@ -1,29 +1,31 @@
 package com.datastax.faultytowers;
 
+import java.io.IOException;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
 import java.security.ProtectionDomain;
 
+import org.jacoco.core.analysis.Analyzer;
 import org.jacoco.core.analysis.CoverageBuilder;
+import org.jacoco.core.analysis.IClassCoverage;
+import org.jacoco.core.analysis.IMethodCoverage;
+import org.jacoco.core.data.ExecutionDataStore;
+import org.jacoco.core.data.SessionInfoStore;
 import org.jacoco.core.instr.Instrumenter;
 import org.jacoco.core.runtime.IRuntime;
 import org.jacoco.core.runtime.RuntimeData;
 
-public class CodeCoverage implements ClassFileTransformer {
+public class JaCoCoCoverageAnalyzer implements ClassFileTransformer, CoverageAnalyzer {
 
-    private CoverageBuilder cb;
     private Instrumenter instrumenter;
     private IRuntime runtime;
     private RuntimeData runtimeData;
 
-    public CodeCoverage(IRuntime runtime, RuntimeData data) throws Exception {
+    public JaCoCoCoverageAnalyzer(IRuntime runtime) throws Exception {
         this.runtime = runtime;
-        this.runtimeData = data;
+        this.runtimeData = new RuntimeData();
         runtime.startup(runtimeData);
         instrumenter = new Instrumenter(runtime);
-        //InputStream is = getClassSource(className);
-        //instrumenter.instrument(is, className);
-        cb = new CoverageBuilder();
     }
 
     public byte[] transform(final ClassLoader loader, final String classname,
@@ -57,5 +59,32 @@ public class CodeCoverage implements ClassFileTransformer {
             ex.printStackTrace();
             throw wrapper;
         }
+    }
+
+    public Double getCoverage(String className, String methodName) {
+        try {
+            final ExecutionDataStore executionDataStore = new ExecutionDataStore();
+            final SessionInfoStore sessionInfoStore = new SessionInfoStore();
+            runtimeData.collect(executionDataStore, sessionInfoStore, false);
+            final CoverageBuilder coverageBuilder = new CoverageBuilder();
+            final Analyzer analyzer = new Analyzer(executionDataStore, coverageBuilder);
+
+            String absClassName = "/" + className.replace(".", "/") + ".class";
+            analyzer.analyzeClass(getClass().getResourceAsStream(absClassName), absClassName);
+            final IClassCoverage cc = coverageBuilder.getClasses().stream().findFirst().orElse(null);
+            if (cc == null)
+                return null;
+
+            cc.getMethodCounter().getCoveredCount();
+            for (final IMethodCoverage mc : cc.getMethods()) {
+                if (mc.getName().equals(methodName))
+                    return mc.getMethodCounter().getCoveredRatio();
+            }
+            return null;
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }
