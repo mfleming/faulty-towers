@@ -2,6 +2,7 @@ package com.datastax.faultytowers;
 
 import java.io.IOException;
 import java.lang.instrument.Instrumentation;
+import java.util.List;
 
 import org.jacoco.core.runtime.IRuntime;
 import org.jacoco.core.runtime.ModifiedSystemClassRuntime;
@@ -28,6 +29,9 @@ public class Agent {
             JaCoCoCoverageAnalyzer codeCoverage = new JaCoCoCoverageAnalyzer(runtime);
             faultyTowers = new FaultyTowers(codeCoverage);
             inst.addTransformer(codeCoverage);
+
+            ExceptionThrower thrower = new ExceptionThrower(List.of());
+            inst.addTransformer(thrower);
         } catch (IOException | ClassNotFoundException e) {
             e.printStackTrace();
         } catch (Exception e) {

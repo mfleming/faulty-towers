@@ -6,4 +6,11 @@ public class Utils {
             ;
         }
     }
+
+    public static class CheckedException extends Exception {}
+
+    public static void throwGuardedCheckedException() throws CheckedException {
+        if (false)
+            throw new CheckedException();
+    }
 }
