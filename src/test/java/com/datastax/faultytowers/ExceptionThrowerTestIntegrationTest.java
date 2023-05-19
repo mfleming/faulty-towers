@@ -4,7 +4,6 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class ExceptionThrowerTestIntegrationTest {
@@ -34,7 +33,30 @@ public class ExceptionThrowerTestIntegrationTest {
         }
     }
 
-    // In the future we probably want to also inject and throw unchecked exceptions
+    @Test
+    public void checkedExceptionWithArgsThrows() {
+        boolean caughtCheckedException = false;
+        try {
+            Utils.throwGuardedCheckedException("Error");
+        } catch (Utils.CheckedException e) {
+            caughtCheckedException = true;
+        } finally {
+            assertTrue(caughtCheckedException);
+        }
+    }
+
+    @Test
+    public void checkedExceptionWithArgsAndCauseThrows() {
+        boolean caughtCheckedException = false;
+        try {
+            Utils.throwGuardedCheckedException("Error", new Exception());
+        } catch (Utils.CheckedException e) {
+            caughtCheckedException = true;
+        } finally {
+            assertTrue(caughtCheckedException);
+        }
+    }
+
     @Test
     public void uncheckedExceptionDoesntThrow() {
         boolean caughtUncheckedException = false;
@@ -43,7 +65,21 @@ public class ExceptionThrowerTestIntegrationTest {
         } catch (Utils.UncheckedException e) {
             caughtUncheckedException = true;
         } finally {
-            assertFalse(caughtUncheckedException);
+            assertTrue(caughtUncheckedException);
+        }
+    }
+
+    @Test
+    public void uncheckedExcpetionWithoutDefaultConstructorThrows() {
+        boolean caughtConcreteException = false;
+        try {
+            // Fight the JVM's dead code elimination
+            boolean shouldThrow = false;
+            Utils.throwGuardedConcreteException(shouldThrow);
+        } catch (Utils.ConcreteException e) {
+            caughtConcreteException = true;
+        } finally {
+            assertTrue(caughtConcreteException);
         }
     }
 }

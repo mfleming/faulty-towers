@@ -1,7 +1,6 @@
 package com.datastax.faultytowers;
 
 import java.lang.instrument.Instrumentation;
-import java.util.List;
 
 public class Agent {
     /**
@@ -23,7 +22,7 @@ public class Agent {
         System.out.println("Agentmain called");
         double throwProbability = Double.parseDouble(agentArgs);
         try {
-            ExceptionThrower thrower = new ExceptionThrower(List.of(), throwProbability);
+            ExceptionThrower thrower = new ExceptionThrower(throwProbability);
             inst.addTransformer(thrower);
         } catch (Exception e) {
             e.printStackTrace();

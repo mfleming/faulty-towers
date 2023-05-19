@@ -8,41 +8,33 @@ import jdk.internal.org.objectweb.asm.tree.*;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.instrument.ClassFileTransformer;
+import java.lang.reflect.Constructor;
 import java.nio.charset.StandardCharsets;
 import java.security.ProtectionDomain;
-import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * Update the bytecode of a method to throw exceptions. There are multiple places where we might
- * want to do this:
- * <p><ol>
- *     <li>Immediately on entering a method with a {@code throws} clause</li>
- *     <li>At a {@code throw} site that is guarded by some condition</li>
- * </ol></p>
- * <p>
- *     We also want to inject some randomness into the throwing process because we don't want to just hit
- *     the same exceptions every single time the app is run.
- * </p>
- * <p>
- *     TODO: It would be nice in the future to be able to delay the injection of methods, e.g. to only trigger
- *     injection 30seconds after the app has started so that it has time to finish initisation which is generally
- *     less interesting than the main runtime phase.
- * </p>
+ * A {@link ClassFileTransformer} that injects a throw statement at the beginning of each method
+ * that either has a {@code throws} clause or throws an unchecked exception.
  *
+ * New throw statements are inserted at the beginning of the method.
+ *
+ * If a class has both a throws clause (checked exception) and throws an unchecked exception, the
+ * checked exception takes precendence and will be thrown. There's no real reason this needs to be
+ * true it's just an assumption to simplify the code.
  */
 public class ExceptionThrower implements ClassFileTransformer {
     private final double throwProbability;
 
-    public ExceptionThrower(List<String> methods, double throwProbability) {
+    public ExceptionThrower(double throwProbability) {
         this.throwProbability = throwProbability;
     }
+
     public byte[] transform(ClassLoader loader, String className,
                             Class<?> classBeingRedefined,
                             ProtectionDomain protectionDomain,
                             byte[] classFileBuffer) {
         writeDebugLog("transforming: " + className);
-//        System.out.println("transforming: " + className);
         return injectThrow(classFileBuffer);
     }
 
@@ -56,16 +48,10 @@ public class ExceptionThrower implements ClassFileTransformer {
                 "org/jacoco/",
                 "org/apache/tools",
                 "org/slf4j",
-                "ch/qos",
-                "org/apache/cassandra/ServerTestUtils").anyMatch(className::startsWith))
+                "ch/qos").anyMatch(className::startsWith))
             return true;
 
         return className.contains("$");
-
-        // TODO remove me. Default to only injecting exceptions for class in org.apache.cassandra
-        // If we had filtering parameters this would be much cleaner.
-//        if (className.startsWith("org/apache/cassandra"))
-//            return false;
     }
 
     /**
@@ -85,57 +71,81 @@ public class ExceptionThrower implements ClassFileTransformer {
 
     /**
      * Inject a throw statement at the beginning of each method that has a {@code throws} clause.
-     * @param node
-     * @return
+     * @param node The class to inject the throw statements into.
+     * @return The transformed class.
      */
     private byte[] injectException(ClassNode node) {
-//        System.out.println("injecting exception for class " + node.name);
+        int size = node.methods.size();
         node.methods.forEach(method -> {
-            List<String> exceptions = method.exceptions;
-            if (exceptions.isEmpty())
-                return;
-
-            // TODO this is a hack to avoid throwing in junit test methods
-            if (method.name.equals("setupClass"))
-                return;
-
             // Choose whether to inject an exception with throwProbability
             if (Math.random() > throwProbability)
                 return;
 
-//            System.out.println("exceptions:" );
-//            exceptions.forEach(System.out::println);
             writeDebugLog("Injecting exception for method " + method.name + " in class " + node.name);
 
-            InsnList newInstructions = new InsnList();
-            // Remember, we only throw the first exception in the throws specification.
-            String firstException = exceptions.get(0);
-            newInstructions.add(new LdcInsnNode(firstException));
+            String exceptionClassName;
+            if (!method.exceptions.isEmpty())
+                exceptionClassName = method.exceptions.get(0);
+            else
+                exceptionClassName = getThrowInsnUncheckedExceptionClassName(method);
 
-            boolean isInterface = false;
-            newInstructions.add(new MethodInsnNode(
-                    Opcodes.INVOKESTATIC,
-                    "com/datastax/faultytowers/ExceptionThrower",
-                    "throwException",
-                    "(Ljava/lang/String;)Ljava/lang/Throwable;",
-                    isInterface
-                    ));
+            if (exceptionClassName == null)
+                return;
 
-            newInstructions.add(new InsnNode(Opcodes.ATHROW));
-            newInstructions.add(new FrameNode(
-                    Opcodes.F_APPEND,
-                    0, new Object[] {},
-                    0, new Object[] {}
-            ));
-            method.maxStack += newInstructions.size();
-            method.instructions.insertBefore(method.instructions.getFirst(), newInstructions);
-
-            // Insert invocation of uncheckedexception
-
+            createThrowInstruction(method, exceptionClassName);
         });
         ClassWriter writer = new ClassWriter(0);
         node.accept(writer);
         return writer.toByteArray();
+    }
+
+    /**
+     * If a method does not have a {@code throws} clause, then search the instructions to see if it
+     * throws an unchecked exception.
+     * @param method The method to search
+     * @return The name of the first unchecked exception that is thrown, or null if none is found.
+     */
+    private String getThrowInsnUncheckedExceptionClassName(MethodNode method) {
+        assert method.exceptions.isEmpty();
+
+        // Return the first unchecked exception class name that we find
+        InsnList instructions = method.instructions;
+        for (AbstractInsnNode instruction : instructions.toArray()) {
+            if (instruction.getOpcode() == Opcodes.ATHROW) {
+                MethodInsnNode methodInsnNode = (MethodInsnNode) instruction.getPrevious();
+                return methodInsnNode.owner;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Create a throw instruction that throws {@code exceptionClassName}.
+     * @param method The method to inject the throw instruction into
+     * @param exceptionClassName The name of the exception to throw
+     */
+    private void createThrowInstruction(MethodNode method, String exceptionClassName) {
+        InsnList newInstructions = new InsnList();
+        newInstructions.add(new LdcInsnNode(exceptionClassName));
+
+        boolean isInterface = false;
+        newInstructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                "com/datastax/faultytowers/ExceptionThrower",
+                "throwException",
+                "(Ljava/lang/String;)Ljava/lang/Throwable;",
+                isInterface
+                ));
+
+        newInstructions.add(new InsnNode(Opcodes.ATHROW));
+        newInstructions.add(new FrameNode(
+                Opcodes.F_APPEND,
+                0, new Object[] {},
+                0, new Object[] {}
+        ));
+        method.maxStack += newInstructions.size();
+        method.instructions.insertBefore(method.instructions.getFirst(), newInstructions);
     }
 
     private void writeDebugLog(String s) {
@@ -147,6 +157,9 @@ public class ExceptionThrower implements ClassFileTransformer {
         }
     }
 
+    /**
+     * Invokved by the JVM to throw an exception. This method is injected into the bytecode via {@code injectException()}
+     */
     @SuppressWarnings("unused")
     public static Throwable throwException(String className) {
         String fullyQualifiedClassName = className.replace("/", ".");
@@ -156,13 +169,28 @@ public class ExceptionThrower implements ClassFileTransformer {
                 return new RuntimeException("foobar");
             }
 
-            // Check whether exception constructor takes an argument
-            try {
-                p.getConstructor(String.class);
-                return (Throwable) p.getConstructor(String.class).newInstance("injected exception");
-            } catch (NoSuchMethodException e) {
-                // No argument constructor
+            Constructor<?>[] constructors = p.getConstructors();
+            if (constructors.length == 0)
+                return new RuntimeException("Failed to throw " + fullyQualifiedClassName + ": no constructors found");
+
+            // Search through all constructors to find one that takes a single argument
+            for (Constructor<?> constructor : constructors) {
+                Class<?>[] parameterTypes = constructor.getParameterTypes();
+                if (parameterTypes.length == 1) {
+                    Class<?> parameterType = parameterTypes[0];
+                    if (parameterType.equals(String.class)) {
+                        return (Throwable) constructor.newInstance("injected exception");
+                    }
+                    if (Throwable.class.isAssignableFrom(parameterType)) {
+                        return (Throwable) constructor.newInstance(new RuntimeException("injected exception"));
+                    }
+                    if (parameterType.equals(int.class)) {
+                        return (Throwable) constructor.newInstance(1);
+                    }
+                }
             }
+
+            // Failing that, try to instantiate a no-arg constructor
             return (Throwable) p.newInstance();
         } catch (Exception e) {
             e.printStackTrace();
