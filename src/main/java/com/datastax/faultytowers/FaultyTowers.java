@@ -1,28 +1,24 @@
 package com.datastax.faultytowers;
 
-import com.github.javaparser.JavaParser;
-import com.github.javaparser.ParseResult;
-import com.github.javaparser.ParserConfiguration;
-import com.github.javaparser.Problem;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.Expression;
-import com.github.javaparser.ast.stmt.*;
-import com.github.javaparser.ast.body.*;
+import com.github.javaparser.ast.stmt.BlockStmt;
+import com.github.javaparser.ast.stmt.ThrowStmt;
+import com.google.common.annotations.VisibleForTesting;
 import com.sun.tools.attach.AgentInitializationException;
 import com.sun.tools.attach.AgentLoadException;
 import com.sun.tools.attach.AttachNotSupportedException;
 import com.sun.tools.attach.VirtualMachine;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.lang.management.ManagementFactory;
 import java.lang.reflect.InvocationTargetException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
-
-import com.google.common.annotations.VisibleForTesting;
 
 /**
  * <p>FaultyTowers is the main entry point to the application.</p>
@@ -41,76 +37,8 @@ import com.google.common.annotations.VisibleForTesting;
  * the workload at runtime and then inject faults.</p>
  */
 public class FaultyTowers {
-    private final PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:**.java");
-    private final JavaParser jvParser;
+    public FaultyTowers() {
 
-    private final CoverageAnalyzer coverageAnalyzer;
-
-    public FaultyTowers(CoverageAnalyzer coverageAnalyzer) {
-        this.coverageAnalyzer = coverageAnalyzer;
-        // Set configuration
-        ParserConfiguration parseConfig = new ParserConfiguration();
-        parseConfig.setCharacterEncoding(StandardCharsets.UTF_8);
-        parseConfig.setTabSize(4);
-        parseConfig.setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_8);
-
-        // Get the parser
-        jvParser = new JavaParser(parseConfig);
-    }
-
-    /**
-     * Recursively walk the directory hierarchy and parse all .java files.
-      */
-    private void parseDirectory(String directory) throws IOException {
-        List<Path> paths = Files.walk(Paths.get(directory))
-                .filter(Files::isRegularFile)
-                .filter(matcher::matches)
-                .collect(Collectors.toList());
-
-        for (Path path : paths) {
-            //System.out.println(path.toAbsolutePath());
-            parse(path);
-        }
-    }
-
-    /**
-     * Parse a file and record all fault locations.
-     *
-     * <p>Currently "faults" are limited to throw statements only.</p>
-     *
-     * @param path The path of the file to parse.
-     * @throws IOException
-     */
-    public void parse(Path path) throws IOException {
-        ParseResult<CompilationUnit> result = jvParser.parse(path);
-        if (!result.isSuccessful()) {
-            System.out.print(String.format("Parsing %s failed:", path.toAbsolutePath()));
-            List<Problem> problems = result.getProblems();
-
-            for (Problem problem : problems) {
-                System.out.println(problem.getVerboseMessage());
-            }
-            return;
-        }
-        parse0(result);
-    }
-
-    @VisibleForTesting
-    // This method is only used for unit tests.
-    public void parse(InputStream is) {
-        ParseResult<CompilationUnit> result = jvParser.parse(is);
-        if (!result.isSuccessful())
-            return;
-
-        parse0(result);
-    }
-
-    private void parse0(ParseResult<CompilationUnit> result) {
-        if (result.getResult().isEmpty())
-            return;
-
-        CompilationUnit compilationUnit = result.getResult().get();
-        parseCompilationUit(compilationUnit);
     }
 
     @VisibleForTesting
@@ -164,20 +92,6 @@ public class FaultyTowers {
      */
     public static void removeAgent() {
         // TODO
-    }
-
-    /**
-     * Return the code coverage statistic for the specified method.
-     *
-     * <p>Return the percentage of time that {@code methodName} in class {@code className}
-     * was executed between the last call to {@link #installAgent(int)} and now.</p>
-     *
-     * @param className  The name of the class containing {@code methodName}.
-     * @param methodName The name of the method.
-     * @return The percentage of time spent in the specified method.
-     */
-    public double getCoverage(String className, String methodName) {
-        return coverageAnalyzer.getCoverage(className, methodName);
     }
 
     private static class FaultLocation {
@@ -267,14 +181,5 @@ public class FaultyTowers {
             // Ignore
         }
         FaultyTowers.removeAgent();
-    }
-
-    /**
-     * Returns the number of locations where faults can occur that we've discovered so far from all {@link #parse(Path)} calls.
-     *
-     * @return The total number of fault locations identified so far.
-     */
-    public int numFaultLocations() {
-        return faultLocations.stream().map(f -> f.exceptions.size()).reduce(0, Integer::sum);
     }
 }
