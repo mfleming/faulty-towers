@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
 import java.security.ProtectionDomain;
+import java.util.List;
 
 import org.jacoco.core.analysis.Analyzer;
 import org.jacoco.core.analysis.CoverageBuilder;
@@ -15,7 +16,7 @@ import org.jacoco.core.instr.Instrumenter;
 import org.jacoco.core.runtime.IRuntime;
 import org.jacoco.core.runtime.RuntimeData;
 
-public class JaCoCoCoverageAnalyzer implements ClassFileTransformer, CoverageAnalyzer {
+public class JaCoCoCoverageAnalyzer extends CoverageAnalyzer implements ClassFileTransformer {
 
     private Instrumenter instrumenter;
     private IRuntime runtime;
@@ -44,9 +45,8 @@ public class JaCoCoCoverageAnalyzer implements ClassFileTransformer, CoverageAna
 
         // Skip all surefire code to avoid java.lang.reflect.InvocationTargetException.
         if (classname.contains("org/apache/maven/surefire") || classname.contains("org/junit")
-                || classname.contains("org/jacoco"))
+                || classname.contains("junit/") || classname.contains("org/jacoco"))
             return null;
-
 
         try {
             return instrumenter.instrument(classfileBuffer, classname);
@@ -61,6 +61,7 @@ public class JaCoCoCoverageAnalyzer implements ClassFileTransformer, CoverageAna
         }
     }
 
+    @Override
     public Double getCoverage(String className, String methodName) {
         try {
             final ExecutionDataStore executionDataStore = new ExecutionDataStore();
@@ -85,6 +86,11 @@ public class JaCoCoCoverageAnalyzer implements ClassFileTransformer, CoverageAna
         } catch (IOException e) {
             e.printStackTrace();
         }
+        return null;
+    }
+
+    @Override
+    public List<FileCoverage> getAllCoverage() {
         return null;
     }
 }

@@ -33,6 +33,16 @@ be executed.
 
 The output of the first run is a coverage file that is used as input to the second run.
 
+#### Coverage File Format
+
+The coverage file emitted after the first phase of offline analysis contains a single line for each
+line of code that was executed. The file is UTF-8 based and intended to be consumed by standard text
+processing tools. The format of the file is:
+
+----
+file:linenumber
+----
+
 ### Online Fault Injection
 
 For long-running tests such as performance benchmarks or stress workloads, Faulty Towers uses a

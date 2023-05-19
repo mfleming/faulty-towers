@@ -1,3 +1,4 @@
 Manifest-Version: 1.0 
+Main-Class: com.datastax.faultytowers.FaultyTowers
 Premain-Class: com.datastax.faultytowers.Agent
 Agent-Class: com.datastax.faultytowers.Agent

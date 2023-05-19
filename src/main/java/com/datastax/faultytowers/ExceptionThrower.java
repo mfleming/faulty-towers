@@ -5,8 +5,11 @@ import jdk.internal.org.objectweb.asm.ClassWriter;
 import jdk.internal.org.objectweb.asm.Opcodes;
 import jdk.internal.org.objectweb.asm.tree.*;
 
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
+import java.nio.charset.StandardCharsets;
 import java.security.ProtectionDomain;
 import java.util.List;
 import java.util.stream.Stream;
@@ -18,16 +21,30 @@ import java.util.stream.Stream;
  *     <li>Immediately on entering a method with a {@code throws} clause</li>
  *     <li>At a {@code throw} site that is guarded by some condition</li>
  * </ol></p>
+ * <p>
+ *     We also want to inject some randomness into the throwing process because we don't want to just hit
+ *     the same exceptions every single time the app is run.
+ * </p>
+ * <p>
+ *     TODO: It would be nice in the future to be able to delay the injection of methods, e.g. to only trigger
+ *     injection 30seconds after the app has started so that it has time to finish initisation which is generally
+ *     less interesting than the main runtime phase.
+ * </p>
+ *
  */
 public class ExceptionThrower implements ClassFileTransformer {
     private final List<String> methods;
+    private final long startTime;
     public ExceptionThrower(List<String> methods) {
         this.methods = methods;
+        this.startTime = System.currentTimeMillis();
     }
     public byte[] transform(ClassLoader loader, String className,
                             Class<?> classBeingRedefined,
                             ProtectionDomain protectionDomain,
                             byte[] classFileBuffer) throws IllegalClassFormatException {
+        writeDebugLog("transforming: " + className);
+        System.out.println("transforming: " + className);
         return injectThrow(classFileBuffer);
     }
 
@@ -38,13 +55,22 @@ public class ExceptionThrower implements ClassFileTransformer {
                 "sun/",
                 "jdk/",
                 "org/junit/",
-                "org/jacoco/").anyMatch(s -> className.startsWith(s)))
+                "org/jacoco/",
+                "org/apache/tools",
+                "org/slf4j",
+                "ch/qos",
+                "org/apache/cassandra/ServerTestUtils").anyMatch(s -> className.startsWith(s)))
             return true;
 
         if (className.contains("$"))
             return true;
 
-        return false;
+        // TODO remove me. Default to only injecting exceptions for class in org.apache.cassandra
+        // If we had filtering parameters this would be much cleaner.
+        if (className.startsWith("org/apache/cassandra"))
+            return false;
+
+        return true;
     }
 
     /**
@@ -59,10 +85,32 @@ public class ExceptionThrower implements ClassFileTransformer {
         if (shouldIgnoreClassName(node.name))
             return classFileBuffer;
 
+        return injectException(node);
+    }
+
+    /**
+     * Inject a throw statement at the beginning of each method that has a {@code throws} clause.
+     * @param node
+     * @return
+     */
+    private byte[] injectException(ClassNode node) {
+        // Sleep this thread for 20 seconds
         node.methods.stream().forEach(method -> {
             List<String> exceptions = method.exceptions;
             if (exceptions.isEmpty())
                 return;
+
+            // TODO this is a hack to avoid throwing in junit test methods
+            if (method.name.equals("setupClass"))
+                return;
+
+            // Randomly choose whether to inject an exception with a 0.5% probability
+            if (Math.random() > 0.005)
+                return;
+
+//            System.out.println("exceptions:" );
+//            exceptions.forEach(System.out::println);
+            writeDebugLog("Injecting exception for method " + method.name + " in class " + node.name);
 
             InsnList newInstructions = new InsnList();
             // Remember, we only throw the first exception in the throws specification.
@@ -86,21 +134,41 @@ public class ExceptionThrower implements ClassFileTransformer {
             ));
             method.maxStack += newInstructions.size();
             method.instructions.insertBefore(method.instructions.getFirst(), newInstructions);
+
+            // Insert invocation of uncheckedexception
+
         });
         ClassWriter writer = new ClassWriter(0);
         node.accept(writer);
         return writer.toByteArray();
     }
 
+    private void writeDebugLog(String s) {
+        try (FileOutputStream fos = new FileOutputStream("/tmp/faulty.log", true)) {
+            String line = System.currentTimeMillis() + " " + s + "\n";
+            fos.write(line.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @SuppressWarnings("unused")
     public static Throwable throwException(String className) {
         String fullyQualifiedClassName = className.replace("/", ".");
         try {
             Class <?> p = Class.forName(fullyQualifiedClassName, false, ClassLoader.getSystemClassLoader());
-            if (Throwable.class.isAssignableFrom(p)) {
-                return (Throwable) p.newInstance();
-            } else {
+            if (!Throwable.class.isAssignableFrom(p)) {
                 return new RuntimeException("foobar");
             }
+
+            // Check whether exception constructor takes an argument
+            try {
+                p.getConstructor(String.class);
+                return (Throwable) p.getConstructor(String.class).newInstance("injected exception");
+            } catch (NoSuchMethodException e) {
+                // No argument constructor
+            }
+            return (Throwable) p.newInstance();
         } catch (Exception e) {
             e.printStackTrace();
             return new RuntimeException("Failed to throw " + fullyQualifiedClassName + ": " + e.getMessage());

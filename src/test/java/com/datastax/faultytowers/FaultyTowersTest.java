@@ -22,23 +22,21 @@ public class FaultyTowersTest {
         String code = "class Foobar {}";
         InputStream is = new ByteArrayInputStream(code.getBytes(StandardCharsets.UTF_8));
         ft.parse(is);
-        assertEquals(0, ft.numFaults());
+        assertEquals(0, ft.numFaultLocations());
     }
 
     @Test
     public void codeWithThrowsHasNonZeroFaults() {
-        String code = """
-                    class Foobar {
-                        void bar() {
-                            if (something)
-                                throw new RuntimeException();
-                            if (somethingElse)
-                                throw new Exception();
-                        }
-                    }
-                """;
+        String code = " class Foobar {\n" +
+                      "  void bar() {\n" +
+                      "     if (something)\n" +
+                      "         throw new RuntimeException();\n" +
+                      "     if (somethingElse)\n" +
+                      "         throw new Exception();\n" +
+                      " }\n" +
+                    "}\n";
         InputStream is = new ByteArrayInputStream(code.getBytes(StandardCharsets.UTF_8));
         ft.parse(is);
-        assertEquals(2, ft.numFaults());
+        assertEquals(2, ft.numFaultLocations());
     }
 }

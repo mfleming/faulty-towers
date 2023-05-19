@@ -1,6 +1,9 @@
 package com.datastax.faultytowers;
 
-import com.github.javaparser.*;
+import com.github.javaparser.JavaParser;
+import com.github.javaparser.ParseResult;
+import com.github.javaparser.ParserConfiguration;
+import com.github.javaparser.Problem;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.stmt.*;
@@ -29,12 +32,12 @@ import com.google.common.annotations.VisibleForTesting;
  * without needing to restart the workload.</p>
  *
  * <p><b>offline-mode:</b> This is used when injecting faults into short-running tests, e.g. JUnit tests.
- * This mode uses 2 phases. First, we collect coverage data for the JUnit test which we write to
+ * This mode uses 2 phases. First, we collect coverage data for the JUnit test which we writeCoverageData to
  * a file once the JUnit tests have finished. In the second step, the file is read, the JUnit tests
  * are executed again, and faults are injected.</p>
  *
  * <p><b>online-mode:</b> This mode is used when injecting faults into long-running tests, e.g. performance
- * workloads. Here we don't write out intermediate coverage data to a file. Instead, we profile
+ * workloads. Here we don't writeCoverageData out intermediate coverage data to a file. Instead, we profile
  * the workload at runtime and then inject faults.</p>
  */
 public class FaultyTowers {
@@ -55,7 +58,9 @@ public class FaultyTowers {
         jvParser = new JavaParser(parseConfig);
     }
 
-    // Recursively walk the directory hierarchy and parse all .java files.
+    /**
+     * Recursively walk the directory hierarchy and parse all .java files.
+      */
     private void parseDirectory(String directory) throws IOException {
         List<Path> paths = Files.walk(Paths.get(directory))
                 .filter(Files::isRegularFile)
@@ -101,17 +106,16 @@ public class FaultyTowers {
     }
 
     private void parse0(ParseResult<CompilationUnit> result) {
-        if (!result.getResult().isPresent())
+        if (result.getResult().isEmpty())
             return;
 
         CompilationUnit compilationUnit = result.getResult().get();
         parseCompilationUit(compilationUnit);
     }
 
+    @VisibleForTesting
     /**
-     * Install the Java Agent into the currently running JVM and return the FaultyTowers object.
-     *
-     * @return The FaultyTowers object installed by the agent or {@code null} on failure.
+     * Install the Java Agent into the current JVM and return the FaultyTowers object.
      */
     public static FaultyTowers installAgent() {
         String pid;
@@ -122,15 +126,25 @@ public class FaultyTowers {
         } else {
             pid = runtimeName.substring(0, processIdIndex);
         }
+        return installAgent(pid);
+    }
 
-        try {
+    /**
+     * Install the Java Agent into the JVM specified by pid and return the FaultyTowers object.
+     *
+     * @return The FaultyTowers object installed by the agent or {@code null} on failure.
+     * @param pid The target JVM process id.
+     */
+    public static FaultyTowers installAgent(String pid) {
+       try {
+           System.out.println("Attaching to " + pid);
             VirtualMachine vm = VirtualMachine.attach(pid);
-            // TODO this is hardcoded. Need to fix.
-            vm.loadAgent("target/faulty-towers-1.0-SNAPSHOT.jar");
-            FaultyTowers ft = (FaultyTowers) Class.forName(Agent.class.getName(), true, ClassLoader.getSystemClassLoader())
+            String agentPath = System.getProperty("user.dir") + "/target/faulty-towers-1.0-SNAPSHOT.jar";
+            vm.loadAgent(agentPath);
+            System.out.println("Agent loaded");
+            return (FaultyTowers) Class.forName(Agent.class.getName(), true, ClassLoader.getSystemClassLoader())
                     .getMethod("getFaultyTowers")
                     .invoke(null);
-            return ft;
 
         } catch (AttachNotSupportedException e) {
             System.out.println("Attach not supported");
@@ -138,17 +152,8 @@ public class FaultyTowers {
         } catch (IOException e) {
             System.out.println("IOException e");
             e.printStackTrace();
-        } catch (AgentLoadException e) {
-            e.printStackTrace();
-        } catch (AgentInitializationException e) {
-            e.printStackTrace();
-        } catch (ClassNotFoundException e) {
-            e.printStackTrace();
-        } catch (InvocationTargetException e) {
-            e.printStackTrace();
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        } catch (NoSuchMethodException e) {
+        } catch (AgentLoadException |AgentInitializationException | ClassNotFoundException |
+                InvocationTargetException | IllegalAccessException | NoSuchMethodException e) {
             e.printStackTrace();
         }
         return null;
@@ -165,7 +170,7 @@ public class FaultyTowers {
      * Return the code coverage statistic for the specified method.
      *
      * <p>Return the percentage of time that {@code methodName} in class {@code className}
-     * was executed between the last call to {@link #installAgent()} and now.</p>
+     * was executed between the last call to {@link #installAgent(int)} and now.</p>
      *
      * @param className  The name of the class containing {@code methodName}.
      * @param methodName The name of the method.
@@ -173,18 +178,6 @@ public class FaultyTowers {
      */
     public double getCoverage(String className, String methodName) {
         return coverageAnalyzer.getCoverage(className, methodName);
-    }
-
-    /**
-     * Write the recorded coverage data to {@code outputFile}.
-     *
-     * @param outputFile The name of the file to write to.
-     * @throws IOException
-     */
-    public void writeCoverage(String outputFile) throws IOException {
-        byte[] data = {};
-        Path file = Paths.get(outputFile);
-        Files.write(file, data);
     }
 
     private static class FaultLocation {
@@ -197,7 +190,7 @@ public class FaultyTowers {
         }
     }
 
-    private List<FaultLocation> faults = new ArrayList<>();
+    private List<FaultLocation> faultLocations = new ArrayList<>();
 
     /**
      * Parse a compilation unit and record all throw statements.
@@ -245,27 +238,43 @@ public class FaultyTowers {
                 if (exceptionsThrown.isEmpty())
                     continue;
 
-                faults.add(new FaultLocation(method.getName().toString(), exceptionsThrown));
+                faultLocations.add(new FaultLocation(method.getName().toString(), exceptionsThrown));
                 //System.out.println("Method: " + method.getName() + " at " + method.getBegin().get() + " throws " + exceptionsThrown);
             }
         }
     }
 
     public static void main(String[] args) throws Exception {
-        String directory = args[0];
-        // Parse a diretory only.
-        FaultyTowers ft = new FaultyTowers(null);
-        ft.parseDirectory(directory);
+        // Verify that we have arguments
+        if (args.length != 1) {
+            System.out.println("Usage: java -jar faulty-towers.jar <pid>");
+            System.exit(1);
+        }
+
+        FaultyTowers ft = installAgent(args[0]);
+        if (ft == null) {
+            System.out.println("Failed to install agent");
+            System.exit(1);
+        }
+
+        // Wait for Ctrl-C
+        System.out.println("Press Ctrl-C to exit");
+        try {
+            while (true) {
+                Thread.sleep(1000);
+            }
+        } catch (InterruptedException e) {
+            // Ignore
+        }
+        FaultyTowers.removeAgent();
     }
 
     /**
-     * Returns the number of faults we've discovered so far from all {@link #parse(Path)} calls.
+     * Returns the number of locations where faults can occur that we've discovered so far from all {@link #parse(Path)} calls.
      *
-     * @return The total number of faults identified so far.
+     * @return The total number of fault locations identified so far.
      */
-    public int numFaults() {
-        return faults.stream()
-                .map(f -> f.exceptions.size())
-                .reduce(0, Integer::sum);
+    public int numFaultLocations() {
+        return faultLocations.stream().map(f -> f.exceptions.size()).reduce(0, Integer::sum);
     }
 }

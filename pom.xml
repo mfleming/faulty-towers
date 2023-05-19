@@ -14,8 +14,8 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <maven.compiler.source>17</maven.compiler.source>
-    <maven.compiler.target>17</maven.compiler.target>
+    <maven.compiler.source>11</maven.compiler.source>
+    <maven.compiler.target>11</maven.compiler.target>
   </properties>
 
   <dependencies>
@@ -33,7 +33,7 @@
     <dependency>
       <groupId>org.jacoco</groupId>
       <artifactId>org.jacoco.core</artifactId>
-      <version>0.8.7</version>
+      <version>0.8.6</version>
     </dependency>
   </dependencies>
 
@@ -124,7 +124,7 @@
               </goals>
               <phase>integration-test</phase>
               <configuration>
-		<argLine>-Djdk.attach.allowAttachSelf=true</argLine>
+		<argLine>-Djdk.attach.allowAttachSelf=true --add-exports java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED --add-exports java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED</argLine>
                 <excludes>
                   <exclude>/src/test/**/*.java</exclude>
                 </excludes>
@@ -141,10 +141,17 @@
           <plugin>
               <groupId>org.apache.maven.plugins</groupId>
               <artifactId>maven-compiler-plugin</artifactId>
-              <configuration>
-                  <source>16</source>
-                  <target>16</target>
-              </configuration>
+            <configuration>
+              <compilerArgs>
+                <arg>-XDignore.symbol.file</arg>
+                <arg>--add-exports</arg>
+                <arg>java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED</arg>
+                <arg>--add-exports</arg>
+                <arg>java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED</arg>
+              </compilerArgs>
+              <source>11</source>
+              <target>11</target>
+            </configuration>
           </plugin>
       </plugins>
   </build>
