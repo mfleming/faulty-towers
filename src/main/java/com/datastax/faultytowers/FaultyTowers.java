@@ -5,10 +5,14 @@ import com.sun.tools.attach.AgentInitializationException;
 import com.sun.tools.attach.AgentLoadException;
 import com.sun.tools.attach.AttachNotSupportedException;
 import com.sun.tools.attach.VirtualMachine;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.ParseException;
 
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
-import java.util.List;
 
 /**
  * <p>FaultyTowers is the main entry point to the application.</p>
@@ -27,8 +31,20 @@ import java.util.List;
  * the workload at runtime and then inject faults.</p>
  */
 public class FaultyTowers {
-    public FaultyTowers() {
+    private final String pid;
+    private final double throwProbability;
 
+    public FaultyTowers(String pid, double throwProbability) {
+        this.pid = pid;
+        this.throwProbability = throwProbability;
+    }
+
+    public String getPid() {
+        return pid;
+    }
+
+    public double getThrowProbability() {
+        return throwProbability;
     }
 
     /**
@@ -82,31 +98,8 @@ public class FaultyTowers {
     }
 
     public static void main(String[] args) {
-        if (args.length != 5) {
-            System.out.println("got " + args.length + " args");
-            System.out.println("Usage: java -jar faulty-towers.jar <-p probability> -P <pid>");
-            System.exit(1);
-        }
-
-        // Parse --prob (-p) for the probability of throwing an exception.
-        double throwProbability = 0.0;
-        String pid = null;
-        for (int i = 0; i < args.length; i++) {
-            if (args[i].equals("--prob") || args[i].equals("-p")) {
-                throwProbability = Double.parseDouble(args[i+1]);
-            }
-
-            if (args[i].equals("--pid") || args[i].equals("-P")) {
-                pid = args[i+1];
-            }
-        }
-
-        if (pid == null) {
-            System.out.println("No --pid (-P) specified");
-            System.exit(1);
-        }
-
-        installAgent(pid, throwProbability);
+        FaultyTowers faultyTowers = buildFaultyTowers(args);
+        installAgent(faultyTowers.getPid(), faultyTowers.getThrowProbability());
 
         // Wait for Ctrl-C
         System.out.println("Press Ctrl-C to exit");
@@ -120,4 +113,38 @@ public class FaultyTowers {
         }
         FaultyTowers.removeAgent();
     }
+
+    @VisibleForTesting
+    /**
+     * Build a FaultyTowers object from the command line arguments.
+     * @param args The command line arguments.
+     * @return A FaultyTowers object. If the command line arguments are invalid, null is returned.
+     */
+    public static FaultyTowers buildFaultyTowers(String[] args) {
+        Options options = new Options();
+        options.addOption("p", "prob", true, "Probability of throwing an exception");
+        options.addOption("P", "pid", true, "Process ID of target JVM");
+
+        String pid = null;
+        double throwProbability = 1.0;
+        CommandLineParser parser = new DefaultParser();
+        try {
+            CommandLine cmd = parser.parse(options, args);
+            if (!cmd.hasOption("pid") || cmd.getOptionValue("pid").isEmpty()) {
+                System.out.println("Missing --pid (-P) param");
+                return null;
+            }
+            pid = cmd.getOptionValue("pid");
+
+            if (cmd.hasOption("prob"))
+                throwProbability = Double.parseDouble(cmd.getOptionValue("prob"));
+
+        } catch (ParseException e) {
+            e.printStackTrace();
+            return null;
+        }
+
+        return new FaultyTowers(pid, throwProbability);
+    }
+
 }

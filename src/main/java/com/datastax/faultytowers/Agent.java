@@ -22,11 +22,11 @@ public class Agent {
      * @param inst
      */
     public static void agentmain(String agentArgs, Instrumentation inst) {
-        double throwProbability = Double.parseDouble(agentArgs);
+        String argsToArray[] = agentArgs.split(" ");
+        FaultyTowers faultyTowers = FaultyTowers.buildFaultyTowers(argsToArray);
         System.out.println("Agentmain called");
         try {
-            ExceptionThrower thrower = new ExceptionThrower(List.of(), throwProbability);
-            faultyTowers = new FaultyTowers();
+            ExceptionThrower thrower = new ExceptionThrower(List.of(), faultyTowers.getThrowProbability());
             inst.addTransformer(thrower);
         } catch (Exception e) {
             e.printStackTrace();
