@@ -15,6 +15,7 @@ public class Utils {
     public static class UncheckedException extends RuntimeException {}
 
     public static void throwGuardedUncheckException() {
+        // noinspection ConstantConditions
         if (false)
             throw new UncheckedException();
     }
@@ -22,6 +23,7 @@ public class Utils {
     public static class CheckedException extends Exception {}
 
     public static void throwGuardedCheckedException() throws CheckedException {
+        // noinspection ConstantConditions
         if (false)
             throw new CheckedException();
     }

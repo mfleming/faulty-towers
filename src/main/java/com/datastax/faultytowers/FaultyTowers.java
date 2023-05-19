@@ -1,11 +1,5 @@
 package com.datastax.faultytowers;
 
-import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.body.MethodDeclaration;
-import com.github.javaparser.ast.expr.Expression;
-import com.github.javaparser.ast.stmt.BlockStmt;
-import com.github.javaparser.ast.stmt.ThrowStmt;
 import com.google.common.annotations.VisibleForTesting;
 import com.sun.tools.attach.AgentInitializationException;
 import com.sun.tools.attach.AgentLoadException;
@@ -14,11 +8,7 @@ import com.sun.tools.attach.VirtualMachine;
 
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
-import java.lang.reflect.InvocationTargetException;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
-import java.util.stream.Collectors;
 
 /**
  * <p>FaultyTowers is the main entry point to the application.</p>
@@ -41,12 +31,12 @@ public class FaultyTowers {
 
     }
 
-    @VisibleForTesting
     /**
      * Install the Java Agent into the current JVM and return the FaultyTowers object.
      */
-    public static FaultyTowers installAgent() {
-        String pid;
+    @VisibleForTesting
+    public static void installAgent(double throwProbability) {
+        String pid = null;
         String runtimeName = ManagementFactory.getRuntimeMXBean().getName();
         int processIdIndex = runtimeName.indexOf('@');
         if (processIdIndex == -1) {
@@ -54,37 +44,34 @@ public class FaultyTowers {
         } else {
             pid = runtimeName.substring(0, processIdIndex);
         }
-        return installAgent(pid);
+        installAgent(pid, throwProbability);
     }
 
     /**
      * Install the Java Agent into the JVM specified by pid and return the FaultyTowers object.
      *
-     * @return The FaultyTowers object installed by the agent or {@code null} on failure.
      * @param pid The target JVM process id.
      */
-    public static FaultyTowers installAgent(String pid) {
-       try {
-           System.out.println("Attaching to " + pid);
+    public static void installAgent(String pid, double throwProbability) {
+        assert pid != null;
+
+        try {
+            System.out.println("Attaching to " + pid);
             VirtualMachine vm = VirtualMachine.attach(pid);
             String agentPath = System.getProperty("user.dir") + "/target/faulty-towers-1.0-SNAPSHOT.jar";
-            vm.loadAgent(agentPath);
+
+            vm.loadAgent(agentPath, String.valueOf(throwProbability));
             System.out.println("Agent loaded");
-            return (FaultyTowers) Class.forName(Agent.class.getName(), true, ClassLoader.getSystemClassLoader())
-                    .getMethod("getFaultyTowers")
-                    .invoke(null);
+//            return (FaultyTowers) Class.forName(Agent.class.getName(), true, ClassLoader.getSystemClassLoader())
+//                    .getMethod("getFaultyTowers")
+//                    .invoke(null);
 
         } catch (AttachNotSupportedException e) {
             System.out.println("Attach not supported");
             e.printStackTrace();
-        } catch (IOException e) {
-            System.out.println("IOException e");
-            e.printStackTrace();
-        } catch (AgentLoadException |AgentInitializationException | ClassNotFoundException |
-                InvocationTargetException | IllegalAccessException | NoSuchMethodException e) {
+        } catch (AgentLoadException |AgentInitializationException | IOException e) {
             e.printStackTrace();
         }
-        return null;
     }
 
     /**
@@ -94,86 +81,37 @@ public class FaultyTowers {
         // TODO
     }
 
-    private static class FaultLocation {
-        String method;
-        List<String> exceptions;
-
-        public FaultLocation(String method, List<String> exceptions) {
-            this.method = method;
-            this.exceptions = exceptions;
+    public static void main(String[] args) {
+        if (args.length != 5) {
+            System.out.println("got " + args.length + " args");
+            System.out.println("Usage: java -jar faulty-towers.jar <-p probability> -P <pid>");
+            System.exit(1);
         }
-    }
 
-    private List<FaultLocation> faultLocations = new ArrayList<>();
+        // Parse --prob (-p) for the probability of throwing an exception.
+        double throwProbability = 0.0;
+        String pid = null;
+        for (int i = 0; i < args.length; i++) {
+            if (args[i].equals("--prob") || args[i].equals("-p")) {
+                throwProbability = Double.parseDouble(args[i+1]);
+            }
 
-    /**
-     * Parse a compilation unit and record all throw statements.
-     *
-     * @param compilationUnit The compilation unit to parse.
-     */
-    private void parseCompilationUit(CompilationUnit compilationUnit) {
-        List<ClassOrInterfaceDeclaration> classes = compilationUnit.findAll(ClassOrInterfaceDeclaration.class).stream()
-                .filter(c -> !c.isInterface())
-                .collect(Collectors.toList());
-
-        for (ClassOrInterfaceDeclaration c : classes) {
-            List<MethodDeclaration> methods = c.getMethods();
-            for (MethodDeclaration method : methods) {
-                Optional<BlockStmt> body = method.getBody();
-
-                // Empty body
-                if (!body.isPresent())
-                    continue;
-
-                // Search for the throw statements.
-                List<ThrowStmt> throwStatements = body.get().findAll(ThrowStmt.class);
-                if (throwStatements.size() == 0)
-                    continue;
-
-                // Storing name of exceptions thrown into this list.
-                List<String> exceptionsThrown = new ArrayList<>();
-
-                for (ThrowStmt stmt : throwStatements) {
-                    // Convert the throw expression to object creation expression and get the type.
-                    Expression expr = stmt.getExpression();
-                    if (expr.isObjectCreationExpr()) {
-                        String exceptionName = expr.asObjectCreationExpr().getType().toString();
-                        if (!exceptionsThrown.contains(exceptionName))
-                            exceptionsThrown.add(exceptionName);
-                    }
-                    // TODO We need to do the extra work to figure out the exception class when the code doesn't
-                    // do a simple "throw new RuntimeException();".
-//                    else {
-//                        System.out.println("Expr is " + expr);
-//                    }
-                }
-
-                // See TODO above.
-                if (exceptionsThrown.isEmpty())
-                    continue;
-
-                faultLocations.add(new FaultLocation(method.getName().toString(), exceptionsThrown));
-                //System.out.println("Method: " + method.getName() + " at " + method.getBegin().get() + " throws " + exceptionsThrown);
+            if (args[i].equals("--pid") || args[i].equals("-P")) {
+                pid = args[i+1];
             }
         }
-    }
 
-    public static void main(String[] args) throws Exception {
-        // Verify that we have arguments
-        if (args.length != 1) {
-            System.out.println("Usage: java -jar faulty-towers.jar <pid>");
+        if (pid == null) {
+            System.out.println("No --pid (-P) specified");
             System.exit(1);
         }
 
-        FaultyTowers ft = installAgent(args[0]);
-        if (ft == null) {
-            System.out.println("Failed to install agent");
-            System.exit(1);
-        }
+        installAgent(pid, throwProbability);
 
         // Wait for Ctrl-C
         System.out.println("Press Ctrl-C to exit");
         try {
+            // noinspection InfiniteLoopStatement
             while (true) {
                 Thread.sleep(1000);
             }

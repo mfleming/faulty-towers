@@ -1,16 +1,9 @@
 package com.datastax.faultytowers;
 
-import java.io.IOException;
 import java.lang.instrument.Instrumentation;
 import java.util.List;
 
-import org.jacoco.core.runtime.IRuntime;
-import org.jacoco.core.runtime.ModifiedSystemClassRuntime;
-import org.jacoco.core.runtime.RuntimeData;
-
 public class Agent {
-    private static IRuntime runtime;
-    private static volatile RuntimeData runtimeData;
     private static FaultyTowers faultyTowers;
 
     /**
@@ -29,9 +22,10 @@ public class Agent {
      * @param inst
      */
     public static void agentmain(String agentArgs, Instrumentation inst) {
+        double throwProbability = Double.parseDouble(agentArgs);
         System.out.println("Agentmain called");
         try {
-            ExceptionThrower thrower = new ExceptionThrower(List.of());
+            ExceptionThrower thrower = new ExceptionThrower(List.of(), throwProbability);
             faultyTowers = new FaultyTowers();
             inst.addTransformer(thrower);
         } catch (Exception e) {

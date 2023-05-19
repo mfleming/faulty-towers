@@ -8,7 +8,6 @@ import jdk.internal.org.objectweb.asm.tree.*;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.instrument.ClassFileTransformer;
-import java.lang.instrument.IllegalClassFormatException;
 import java.nio.charset.StandardCharsets;
 import java.security.ProtectionDomain;
 import java.util.List;
@@ -33,18 +32,17 @@ import java.util.stream.Stream;
  *
  */
 public class ExceptionThrower implements ClassFileTransformer {
-    private final List<String> methods;
-    private final long startTime;
-    public ExceptionThrower(List<String> methods) {
-        this.methods = methods;
-        this.startTime = System.currentTimeMillis();
+    private final double throwProbability;
+
+    public ExceptionThrower(List<String> methods, double throwProbability) {
+        this.throwProbability = throwProbability;
     }
     public byte[] transform(ClassLoader loader, String className,
                             Class<?> classBeingRedefined,
                             ProtectionDomain protectionDomain,
-                            byte[] classFileBuffer) throws IllegalClassFormatException {
+                            byte[] classFileBuffer) {
         writeDebugLog("transforming: " + className);
-        System.out.println("transforming: " + className);
+//        System.out.println("transforming: " + className);
         return injectThrow(classFileBuffer);
     }
 
@@ -59,18 +57,15 @@ public class ExceptionThrower implements ClassFileTransformer {
                 "org/apache/tools",
                 "org/slf4j",
                 "ch/qos",
-                "org/apache/cassandra/ServerTestUtils").anyMatch(s -> className.startsWith(s)))
+                "org/apache/cassandra/ServerTestUtils").anyMatch(className::startsWith))
             return true;
 
-        if (className.contains("$"))
-            return true;
+        return className.contains("$");
 
         // TODO remove me. Default to only injecting exceptions for class in org.apache.cassandra
         // If we had filtering parameters this would be much cleaner.
-        if (className.startsWith("org/apache/cassandra"))
-            return false;
-
-        return true;
+//        if (className.startsWith("org/apache/cassandra"))
+//            return false;
     }
 
     /**
@@ -94,8 +89,8 @@ public class ExceptionThrower implements ClassFileTransformer {
      * @return
      */
     private byte[] injectException(ClassNode node) {
-        // Sleep this thread for 20 seconds
-        node.methods.stream().forEach(method -> {
+//        System.out.println("injecting exception for class " + node.name);
+        node.methods.forEach(method -> {
             List<String> exceptions = method.exceptions;
             if (exceptions.isEmpty())
                 return;
@@ -104,8 +99,8 @@ public class ExceptionThrower implements ClassFileTransformer {
             if (method.name.equals("setupClass"))
                 return;
 
-            // Randomly choose whether to inject an exception with a 0.5% probability
-            if (Math.random() > 0.005)
+            // Choose whether to inject an exception with throwProbability
+            if (Math.random() > throwProbability)
                 return;
 
 //            System.out.println("exceptions:" );

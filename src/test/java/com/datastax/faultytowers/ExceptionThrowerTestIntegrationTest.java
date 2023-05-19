@@ -8,12 +8,13 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class ExceptionThrowerTestIntegrationTest {
-    private static FaultyTowers ft;
+
+    private static final double THROW_PROBABILITY = 1.0;
 
     @BeforeClass
     public static void setUp() {
         System.out.println("Setting up");
-        ft = FaultyTowers.installAgent();
+        FaultyTowers.installAgent(THROW_PROBABILITY);
     }
 
     @AfterClass
