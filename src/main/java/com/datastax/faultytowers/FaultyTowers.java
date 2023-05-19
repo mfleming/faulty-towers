@@ -68,7 +68,7 @@ public class FaultyTowers {
      *
      * @param pid The target JVM process id.
      */
-    public static void installAgent(String pid, double throwProbability) {
+    private static void installAgent(String pid, double throwProbability) {
         assert pid != null;
 
         try {
