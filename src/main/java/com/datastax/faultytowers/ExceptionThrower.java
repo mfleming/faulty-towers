@@ -11,6 +11,7 @@ import java.lang.instrument.ClassFileTransformer;
 import java.lang.reflect.Constructor;
 import java.nio.charset.StandardCharsets;
 import java.security.ProtectionDomain;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 /**
@@ -158,7 +159,11 @@ public class ExceptionThrower implements ClassFileTransformer {
     }
 
     /**
-     * Invokved by the JVM to throw an exception. This method is injected into the bytecode via {@code injectException()}
+     * Invokved by the JVM to throw an exception. This method is injected into the bytecode via
+     * {@code injectException()}
+     *
+     * NOTE: A current limitation is that this method can only throw exceptions that have a zero or
+     * one argument constructor.
      */
     @SuppressWarnings("unused")
     public static Throwable throwException(String className) {
