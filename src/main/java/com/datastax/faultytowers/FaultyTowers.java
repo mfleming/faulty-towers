@@ -15,20 +15,7 @@ import java.io.IOException;
 import java.lang.management.ManagementFactory;
 
 /**
- * <p>FaultyTowers is the main entry point to the application.</p>
- *
- * <p>Depending on which mode we're executing in, we're either collecting code coverage data for a
- * subsequent run or profiling a workload until we have enough samples that we can inject faults
- * without needing to restart the workload.</p>
- *
- * <p><b>offline-mode:</b> This is used when injecting faults into short-running tests, e.g. JUnit tests.
- * This mode uses 2 phases. First, we collect coverage data for the JUnit test which we writeCoverageData to
- * a file once the JUnit tests have finished. In the second step, the file is read, the JUnit tests
- * are executed again, and faults are injected.</p>
- *
- * <p><b>online-mode:</b> This mode is used when injecting faults into long-running tests, e.g. performance
- * workloads. Here we don't writeCoverageData out intermediate coverage data to a file. Instead, we profile
- * the workload at runtime and then inject faults.</p>
+ * A Java Agent that injects exceptions into the JVM.
  */
 public class FaultyTowers {
     private final String pid;
