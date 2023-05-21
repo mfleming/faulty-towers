@@ -29,7 +29,7 @@ public class ExceptionThrowerTestIntegrationTest {
         } catch (Utils.CheckedException e) {
             caughtCheckedException = true;
         } finally {
-            assertTrue(caughtCheckedException);
+            assertTrue("Failed to throw CheckedException", caughtCheckedException);
         }
     }
 
@@ -41,7 +41,7 @@ public class ExceptionThrowerTestIntegrationTest {
         } catch (Utils.CheckedException e) {
             caughtCheckedException = true;
         } finally {
-            assertTrue(caughtCheckedException);
+            assertTrue("Failed to throw CheckedException", caughtCheckedException);
         }
     }
 
@@ -53,7 +53,7 @@ public class ExceptionThrowerTestIntegrationTest {
         } catch (Utils.CheckedException e) {
             caughtCheckedException = true;
         } finally {
-            assertTrue(caughtCheckedException);
+            assertTrue("Failed to throw CheckedException", caughtCheckedException);
         }
     }
 
@@ -65,7 +65,7 @@ public class ExceptionThrowerTestIntegrationTest {
         } catch (Utils.UncheckedException e) {
             caughtUncheckedException = true;
         } finally {
-            assertTrue(caughtUncheckedException);
+            assertTrue("Failed throw UncheckedException", caughtUncheckedException);
         }
     }
 
@@ -79,7 +79,7 @@ public class ExceptionThrowerTestIntegrationTest {
         } catch (Utils.ConcreteException e) {
             caughtConcreteException = true;
         } finally {
-            assertTrue(caughtConcreteException);
+            assertTrue("Failed to throw ConcreteException", caughtConcreteException);
         }
     }
 }
