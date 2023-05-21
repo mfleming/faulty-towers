@@ -6,7 +6,7 @@ public class Agent {
     /**
      * Entry point for statically loading the agent via -javaagent.
      * @param agentArgs The probability of throwing an exception
-     * @param inst
+     * @param inst The instrumentation object
      */
     public static void premain(String agentArgs, Instrumentation inst) {
         System.out.println("Premain called");

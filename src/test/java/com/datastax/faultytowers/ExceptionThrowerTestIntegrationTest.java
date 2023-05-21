@@ -4,6 +4,7 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class ExceptionThrowerTestIntegrationTest {
@@ -13,6 +14,7 @@ public class ExceptionThrowerTestIntegrationTest {
     @BeforeClass
     public static void setUp() {
         System.out.println("Setting up");
+        ExceptionThrower.THROW_LIMIT = 10;
         FaultyTowers.installAgent(THROW_PROBABILITY);
     }
 
@@ -58,7 +60,7 @@ public class ExceptionThrowerTestIntegrationTest {
     }
 
     @Test
-    public void uncheckedExceptionDoesntThrow() {
+    public void uncheckedExceptionThrows() {
         boolean caughtUncheckedException = false;
         try {
             Utils.throwGuardedUncheckException();
@@ -81,5 +83,20 @@ public class ExceptionThrowerTestIntegrationTest {
         } finally {
             assertTrue("Failed to throw ConcreteException", caughtConcreteException);
         }
+    }
+
+    @Test
+    public void throwLimitCapsMaxNumberOfThrows() {
+        long oldThrowLimit = ExceptionThrower.THROW_LIMIT;
+        ExceptionThrower.THROW_LIMIT = 0;
+        boolean caughtCheckedException = false;
+        try {
+            Utils.throwGuardedCheckedException();
+        } catch (Utils.CheckedException e) {
+            caughtCheckedException = true;
+        } finally {
+            assertFalse("Failed to throw CheckedException", caughtCheckedException);
+        }
+        ExceptionThrower.THROW_LIMIT = oldThrowLimit;
     }
 }

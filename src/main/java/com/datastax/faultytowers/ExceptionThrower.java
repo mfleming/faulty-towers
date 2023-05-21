@@ -1,5 +1,6 @@
 package com.datastax.faultytowers;
 
+import com.google.common.annotations.VisibleForTesting;
 import jdk.internal.org.objectweb.asm.ClassReader;
 import jdk.internal.org.objectweb.asm.ClassWriter;
 import jdk.internal.org.objectweb.asm.Opcodes;
@@ -11,21 +12,34 @@ import java.lang.instrument.ClassFileTransformer;
 import java.lang.reflect.Constructor;
 import java.nio.charset.StandardCharsets;
 import java.security.ProtectionDomain;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 /**
  * A {@link ClassFileTransformer} that injects a throw statement at the beginning of each method
- * that either has a {@code throws} clause or throws an unchecked exception.
+ * that either has a {@code throws} clause or throws an unchecked exception somewhere in its body.
  *
- * New throw statements are inserted at the beginning of the method.
+ * Injection can be controlled by specifying the {@code throwProbability} parameter that gets
+ * passed to the {@link ExceptionThrower} constructor.
+ *
+ * Instead of actually injecting a {@code Opcode.ATHROW} instruction into the body of the method,
+ * we inject a call to {@link ExceptionThrower#throwException()} which will throw an exception
+ * provided that the {@code THROW_LIMIT} has not been exceeded.
  *
  * If a class has both a throws clause (checked exception) and throws an unchecked exception, the
  * checked exception takes precendence and will be thrown. There's no real reason this needs to be
  * true it's just an assumption to simplify the code.
  */
 public class ExceptionThrower implements ClassFileTransformer {
+    // Count how many times an exception has been throw for a method
+    private static final ConcurrentHashMap<String, AtomicInteger> throwCounter = new ConcurrentHashMap<>();
     private final double throwProbability;
+
+    // By default we want to limit the number of times an exception is thrown to 1. This is to give
+    // the app a chance to continue functioning after a failure.
+    @VisibleForTesting
+    public static long THROW_LIMIT = 1;
 
     public ExceptionThrower(double throwProbability) {
         this.throwProbability = throwProbability;
@@ -93,7 +107,19 @@ public class ExceptionThrower implements ClassFileTransformer {
             if (exceptionClassName == null)
                 return;
 
-            createThrowInstruction(method, exceptionClassName);
+            InsnList newInstructions = new InsnList();
+            newInstructions.add(new LdcInsnNode(node.name + "." + method.name));
+            newInstructions.add(new LdcInsnNode(exceptionClassName));
+            newInstructions.add(new MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    "com/datastax/faultytowers/ExceptionThrower",
+                    "throwException",
+                    "(Ljava/lang/String;Ljava/lang/String;)V",
+                    false
+                    ));
+
+            method.maxStack += newInstructions.size();
+            method.instructions.insertBefore(method.instructions.getFirst(), newInstructions);
         });
         ClassWriter writer = new ClassWriter(0);
         node.accept(writer);
@@ -121,34 +147,6 @@ public class ExceptionThrower implements ClassFileTransformer {
         return null;
     }
 
-    /**
-     * Create a throw instruction that throws {@code exceptionClassName}.
-     * @param method The method to inject the throw instruction into
-     * @param exceptionClassName The name of the exception to throw
-     */
-    private void createThrowInstruction(MethodNode method, String exceptionClassName) {
-        InsnList newInstructions = new InsnList();
-        newInstructions.add(new LdcInsnNode(exceptionClassName));
-
-        boolean isInterface = false;
-        newInstructions.add(new MethodInsnNode(
-                Opcodes.INVOKESTATIC,
-                "com/datastax/faultytowers/ExceptionThrower",
-                "throwException",
-                "(Ljava/lang/String;)Ljava/lang/Throwable;",
-                isInterface
-                ));
-
-        newInstructions.add(new InsnNode(Opcodes.ATHROW));
-        newInstructions.add(new FrameNode(
-                Opcodes.F_APPEND,
-                0, new Object[] {},
-                0, new Object[] {}
-        ));
-        method.maxStack += newInstructions.size();
-        method.instructions.insertBefore(method.instructions.getFirst(), newInstructions);
-    }
-
     private void writeDebugLog(String s) {
         try (FileOutputStream fos = new FileOutputStream("/tmp/faulty.log", true)) {
             String line = System.currentTimeMillis() + " " + s + "\n";
@@ -160,23 +158,29 @@ public class ExceptionThrower implements ClassFileTransformer {
 
     /**
      * Invokved by the JVM to throw an exception. This method is injected into the bytecode via
-     * {@code injectException()}
+     * {@code injectException()}. The {@code exceptionClassName} parameter is the name of the exception to
+     * throw. {@code THROW_LIMIT} places a limit on the number of times that an exception is thrown
+     * from the same method.
      *
      * NOTE: A current limitation is that this method can only throw exceptions that have a zero or
      * one argument constructor.
+     *
+     * @param callingMethodName The name of the method that called this method
+     * @param exceptionClassName The name of the exception to throw
      */
     @SuppressWarnings("unused")
-    public static Throwable throwException(String className) {
-        String fullyQualifiedClassName = className.replace("/", ".");
+    public static void throwException(String callingMethodName, String exceptionClassName) throws Throwable {
+        Throwable throwable = null;
+        String fullyQualifiedClassName = exceptionClassName.replace("/", ".");
         try {
             Class <?> p = Class.forName(fullyQualifiedClassName, false, ClassLoader.getSystemClassLoader());
             if (!Throwable.class.isAssignableFrom(p)) {
-                return new RuntimeException("foobar");
+                throw new RuntimeException("Class " + fullyQualifiedClassName + " is not a Throwable");
             }
 
             Constructor<?>[] constructors = p.getConstructors();
             if (constructors.length == 0)
-                return new RuntimeException("Failed to throw " + fullyQualifiedClassName + ": no constructors found");
+                throw new RuntimeException("Failed to throw " + fullyQualifiedClassName + ": no constructors found");
 
             // Search through all constructors to find one that takes a single argument
             for (Constructor<?> constructor : constructors) {
@@ -184,22 +188,31 @@ public class ExceptionThrower implements ClassFileTransformer {
                 if (parameterTypes.length == 1) {
                     Class<?> parameterType = parameterTypes[0];
                     if (parameterType.equals(String.class)) {
-                        return (Throwable) constructor.newInstance("injected exception");
+                        throwable = (Throwable) constructor.newInstance("injected exception");
                     }
                     if (Throwable.class.isAssignableFrom(parameterType)) {
-                        return (Throwable) constructor.newInstance(new RuntimeException("injected exception"));
+                        throwable = (Throwable) constructor.newInstance(new RuntimeException("injected exception"));
                     }
                     if (parameterType.equals(int.class)) {
-                        return (Throwable) constructor.newInstance(1);
+                        throwable = (Throwable) constructor.newInstance(1);
                     }
                 }
             }
 
             // Failing that, try to instantiate a no-arg constructor
-            return (Throwable) p.newInstance();
+            if (throwable == null) {
+                throwable = (Throwable) p.newInstance();
+            }
         } catch (Exception e) {
             e.printStackTrace();
-            return new RuntimeException("Failed to throw " + fullyQualifiedClassName + ": " + e.getMessage());
+            throw new RuntimeException("Failed to throw " + fullyQualifiedClassName + ": " + e.getMessage());
         }
+
+        long counter = throwCounter.computeIfAbsent(callingMethodName,
+                k -> new AtomicInteger(0)).incrementAndGet();
+        if (counter > THROW_LIMIT)
+            return;
+
+        throw throwable;
     }
 }
